@@ -2,10 +2,12 @@
 
 namespace Hybridly;
 
+use Hybridly\Support\Partial;
 use Hybridly\View\Factory;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Traits\Macroable;
+use Spatie\LaravelData\Contracts\DataObject;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -30,7 +32,7 @@ class Hybridly
     /**
      * Returns a hybrid view.
      */
-    public function view(string $component, array|Arrayable $properties = []): Factory
+    public function view(string $component, array|Arrayable|DataObject $properties = []): Factory
     {
         return resolve(Factory::class)->view($component, $properties);
     }
@@ -55,11 +57,12 @@ class Hybridly
     }
 
     /**
-     * Returns a lazy property that will get evaluated only when specifically required.
+     * Creates a property that will get evaluated only when included in a partial reload.
+     * Partial properties are not included during the first load.
      */
-    public function lazy(\Closure $callback): Lazy
+    public function partial(\Closure $callback): Partial
     {
-        return new Lazy($callback);
+        return new Partial($callback);
     }
 
     /**
