@@ -95,7 +95,13 @@ class Assertable extends AssertableJson
 
             // ['property_name' => 10] -> assert that it exists and has the given count
             if (\is_string($key) && \is_int($value)) {
-                $this->has($scope . '.' . $key, length: $value);
+                // If the value is countable or iterable, assert that it has the given count.
+                // If not, assert its exact value
+                if (is_countable(data_get($this->properties, $key)) || is_iterable(data_get($this->properties, $key))) {
+                    $this->has($scope . '.' . $key, $value);
+                } else {
+                    $this->where($scope . '.' . $key, $value);
+                }
 
                 continue;
             }
@@ -126,6 +132,13 @@ class Assertable extends AssertableJson
             // ['property_name' => null] -> assert that it's a null value
             if (\is_string($key) && \is_null($value)) {
                 $this->where($scope . '.' . $key, null);
+
+                continue;
+            }
+
+            // ['property_name' => true] -> assert that it's a bool value
+            if (\is_string($key) && \is_bool($value)) {
+                $this->where($scope . '.' . $key, $value);
 
                 continue;
             }
