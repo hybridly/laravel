@@ -25,7 +25,7 @@ class Assertable extends AssertableJson
 
             PHPUnit::assertIsArray($payload);
             PHPUnit::assertArrayHasKey('view', $payload);
-            PHPUnit::assertArrayHasKey('name', $payload['view']);
+            PHPUnit::assertArrayHasKey('component', $payload['view']);
             PHPUnit::assertArrayHasKey('properties', $payload['view']);
             PHPUnit::assertArrayHasKey('dialog', $payload);
             PHPUnit::assertArrayHasKey('url', $payload);
@@ -36,7 +36,7 @@ class Assertable extends AssertableJson
 
         $instance = static::fromArray($payload);
         $instance->payload = $payload;
-        $instance->view = $payload['view']['name'];
+        $instance->view = $payload['view']['component'];
         $instance->properties = $payload['view']['properties'];
         $instance->dialog = $payload['dialog'];
         $instance->url = $payload['url'];
@@ -124,7 +124,7 @@ class Assertable extends AssertableJson
 
             // ['property_name' => ['foo']] -> assert using an array
             if (\is_string($key) && \is_array($value)) {
-                $this->hasProperties($value, scope: $scope . '.' . $key);
+                PHPUnit::assertSame($value, data_get($this->properties, $key));
 
                 continue;
             }
