@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use ReflectionMethod;
 use Spatie\LaravelData\Contracts\DataObject;
+use Spatie\LaravelTypeScriptTransformer\Commands\TypeScriptTransformCommand;
 use Spatie\StructureDiscoverer\Discover;
 
 class GenerateGlobalTypesCommand extends Command
@@ -54,31 +55,45 @@ class GenerateGlobalTypesCommand extends Command
             return null;
         }
 
+        if (!class_exists($data)) {
+            return null;
+        }
+
         if (!class_implements($data, DataObject::class)) {
             return null;
         }
 
         $namespace = str_replace('\\', '.', $data);
 
-        return <<<TYPESCRIPT
-        interface GlobalHybridlyProperties extends {$namespace} {
+        return $this->getGlobalHybridPropertiesInterface($namespace);
+    }
+
+    protected function getGlobalHybridPropertiesInterface(?string $namespace = null): string
+    {
+        if ($namespace) {
+            return <<<TYPESCRIPT
+            interface GlobalHybridlyProperties extends {$namespace} {
+            }
+            TYPESCRIPT;
         }
+
+        return <<<TYPESCRIPT
+        type GlobalHybridlyProperties = never
         TYPESCRIPT;
     }
 
     protected function writeTypes(): bool
     {
-        Artisan::call('typescript:transform', [
-            '--output' => '../.hybridly/back-end.d.ts',
-        ]);
-
-        if (!$definitions = rescue(fn () => $this->getTypeDefinitions(), rescue: false, report: false)) {
-            return false;
+        if (class_exists(TypeScriptTransformCommand::class)) {
+            Artisan::call(TypeScriptTransformCommand::class, [
+                '--output' => '../.hybridly/back-end.d.ts',
+            ]);
         }
 
+        $definitions = rescue(fn () => $this->getTypeDefinitions(), rescue: false, report: false);
         $result = (bool) File::put(
             $path = base_path('.hybridly/hybridly.d.ts'),
-            $definitions,
+            $definitions ?? $this->getGlobalHybridPropertiesInterface(),
         );
 
         if ($result) {
