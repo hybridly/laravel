@@ -32,7 +32,13 @@
             "Hybridly\\": "src"
         },
         "files": [
+            "src/global_helpers.php",
             "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "files": [
+            "src/Testing/helpers.php"
         ]
     },
     "config": {
