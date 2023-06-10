@@ -3,9 +3,9 @@
 namespace Hybridly\View;
 
 use Hybridly\Contracts\HybridResponse;
-use Hybridly\DialogResolver;
 use Hybridly\Hybridly;
-use Hybridly\PropertiesResolver\PropertiesResolver;
+use Hybridly\Support\DialogResolver;
+use Hybridly\Support\PropertiesResolver;
 use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\JsonResponse;
