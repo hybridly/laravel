@@ -8,13 +8,13 @@ use Hybridly\Commands\InstallCommand;
 use Hybridly\Commands\PrintConfigurationCommand;
 use Hybridly\Http\Controller;
 use Hybridly\Support\Data\PartialLazy;
+use Hybridly\Support\RayDumper;
 use Hybridly\Testing\TestResponseMacros;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Router;
 use Illuminate\Testing\TestResponse;
 use Illuminate\View\Compilers\BladeCompiler;
 use Illuminate\View\Factory;
-use Spatie\LaravelData\Lazy;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -39,19 +39,41 @@ class HybridlyServiceProvider extends PackageServiceProvider
         $this->registerTestingMacros();
         $this->registerArchitecture();
 
-        $this->callAfterResolving('view', static function (Factory $view): void {
-            $view->addLocation(resource_path('application'));
+        $this->callAfterResolving('view', function (Factory $view): void {
+            $view->addLocation($this->getRootPath('application'));
         });
+    }
+
+    public function packageBooted(): void
+    {
+        if (class_exists(\Spatie\LaravelData\Lazy::class)) {
+            \Spatie\LaravelData\Lazy::macro('partial', function (\Closure $value): PartialLazy {
+                return new PartialLazy($value);
+            });
+        }
+
+        if (class_exists(\Spatie\LaravelRay\Ray::class)) {
+            $this->app->singleton(RayDumper::class);
+            $dumper = $this->app->get(RayDumper::class);
+
+            \Spatie\LaravelRay\Ray::macro('showHybridRequests', function () use ($dumper) {
+                $dumper->showHybridRequests();
+            });
+
+            \Spatie\LaravelRay\Ray::macro('stopShowingHybridRequests', function () use ($dumper) {
+                $dumper->stopShowingHybridRequests();
+            });
+        }
     }
 
     protected function registerArchitecture(): void
     {
-        $preset = $this->app['config']->get('hybridly.architecture.preset', 'default');
-        $domainsDirectory = $this->app['config']->get('hybridly.architecture.domains_directory', 'domains');
+        $preset = config('hybridly.architecture.preset', 'default');
+        $domainsDirectory = config('hybridly.architecture.domains_directory', 'domains');
 
         match ($preset) {
-            'default' => $this->app->make(Hybridly::class)->loadModuleFrom(resource_path(), 'default'),
-            'modules' => $this->app->make(Hybridly::class)->loadModulesFrom(resource_path($domainsDirectory)),
+            'default' => $this->app->make(Hybridly::class)->loadModuleFrom($this->getRootPath(), 'default'),
+            'modules' => $this->app->make(Hybridly::class)->loadModulesFrom($this->getRootPath($domainsDirectory)),
             default => null
         };
     }
@@ -97,16 +119,18 @@ class HybridlyServiceProvider extends PackageServiceProvider
                 ->defaults('component', $component)
                 ->defaults('properties', $properties);
         });
-
-        if (class_exists(\Spatie\LaravelData\Lazy::class)) {
-            Lazy::macro('partial', function (\Closure $value): PartialLazy {
-                return new PartialLazy($value);
-            });
-        }
     }
 
     protected function registerTestingMacros(): void
     {
         TestResponse::mixin(new TestResponseMacros());
+    }
+
+    private function getRootPath(...$segments): string
+    {
+        return base_path(implode(\DIRECTORY_SEPARATOR, [
+            config('hybridly.architecture.root', 'resources'),
+            ...$segments ?? [],
+        ]));
     }
 }
