@@ -2,6 +2,8 @@
 
 namespace Hybridly;
 
+use Hybridly\Support\Deferred;
+use Hybridly\Support\Header;
 use Hybridly\Support\Partial;
 use Hybridly\Support\VueViewFinder;
 use Hybridly\View\Factory;
@@ -24,16 +26,6 @@ final class Hybridly
     use Conditionable;
     use Macroable;
 
-    public const HYBRIDLY_HEADER = 'x-hybrid';
-    public const DIALOG_KEY_HEADER = 'x-hybrid-dialog-key';
-    public const DIALOG_REDIRECT_HEADER = 'x-hybrid-dialog-redirect';
-    public const EXTERNAL_HEADER = 'x-hybrid-external';
-    public const PARTIAL_COMPONENT_HEADER = 'x-hybrid-partial-component';
-    public const ONLY_DATA_HEADER = 'x-hybrid-only-data';
-    public const EXCEPT_DATA_HEADER = 'x-hybrid-except-data';
-    public const CONTEXT_HEADER = 'x-hybrid-context';
-    public const ERROR_BAG_HEADER = 'x-hybrid-error-bag';
-    public const VERSION_HEADER = 'x-hybrid-version';
     public const DEFAULT_ROOT_VIEW = 'root';
 
     public function __construct(
@@ -46,9 +38,19 @@ final class Hybridly
      *
      * @see https://hybridly.dev/api/laravel/hybridly.html#view
      */
-    public function view(string $component, array|Arrayable|DataObject $properties = []): Factory
+    public function view(string $component = null, array|Arrayable|DataObject $properties = []): Factory
     {
         return resolve(Factory::class)->view($component, $properties);
+    }
+
+    /**
+     * Returns updated properties for the current view.
+     *
+     * @see https://hybridly.dev/api/laravel/hybridly.html#properties
+     */
+    public function properties(array|Arrayable|DataObject $properties): Factory
+    {
+        return resolve(Factory::class)->properties($properties);
     }
 
     /**
@@ -66,7 +68,7 @@ final class Hybridly
         if ($this->isHybrid()) {
             return new Response(
                 status: Response::HTTP_CONFLICT,
-                headers: [self::EXTERNAL_HEADER => $url],
+                headers: [Header::EXTERNAL => $url],
             );
         }
 
@@ -85,6 +87,17 @@ final class Hybridly
     }
 
     /**
+     * Creates a deferred property that will not be included in an initial loaded,
+     * but will automatically be loaded in a subsequent partial reload.
+     *
+     * @see https://hybridly.dev/api/laravel/hybridly.html#deferred
+     */
+    public function deferred(\Closure $callback): Deferred
+    {
+        return new Deferred($callback);
+    }
+
+    /**
      * Determines whether the current request is hybrid.
      *
      * @see https://hybridly.dev/api/laravel/hybridly.html#ishybrid
@@ -93,7 +106,7 @@ final class Hybridly
     {
         $request ??= request();
 
-        return $request->headers->has(self::HYBRIDLY_HEADER);
+        return $request->headers->has(Header::HYBRID_REQUEST);
     }
 
     /**
@@ -109,7 +122,7 @@ final class Hybridly
             return false;
         }
 
-        return $request->headers->has(self::PARTIAL_COMPONENT_HEADER);
+        return $request->headers->has(Header::PARTIAL_COMPONENT);
     }
 
     /**

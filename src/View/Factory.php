@@ -5,6 +5,8 @@ namespace Hybridly\View;
 use Hybridly\Contracts\HybridResponse;
 use Hybridly\Hybridly;
 use Hybridly\Support\DialogResolver;
+use Hybridly\Support\Header;
+use Hybridly\Support\MissingViewComponentException;
 use Hybridly\Support\PropertiesResolver;
 use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Contracts\Support\Arrayable;
@@ -22,6 +24,8 @@ class Factory implements HybridResponse
     protected View $view;
     protected View $dialogView;
     protected ?string $dialogBaseUrl = null;
+
+    public const RESPONSE_EVENT = 'hybridly.response';
 
     public function __construct(
         protected Hybridly $hybridly,
@@ -50,15 +54,11 @@ class Factory implements HybridResponse
     /**
      * Sets the hybridly view data.
      */
-    public function view(string $component, array|Arrayable|DataObject $properties): static
+    public function view(string $component = null, array|Arrayable|DataObject $properties = []): static
     {
-        if ($properties instanceof Arrayable || $properties instanceof DataObject) {
-            $properties = $properties->toArray();
-        }
-
         $this->view = new View(
             component: $component,
-            properties: $properties,
+            properties: $this->transformProperties($properties),
         );
 
         return $this;
@@ -82,13 +82,9 @@ class Factory implements HybridResponse
      */
     public function properties(array|Arrayable|DataObject $properties): static
     {
-        if (!isset($this->view)) {
-            throw new \LogicException('The `properties` method requires a view to be defined. Call `view` or `component` before.');
-        }
-
         $this->view = new View(
-            component: $this->view->component,
-            properties: $properties,
+            component: $this->view?->component,
+            properties: $this->transformProperties($properties),
         );
 
         return $this;
@@ -131,18 +127,24 @@ class Factory implements HybridResponse
             $payload = $this->renderDialog($request, $payload);
         }
 
-        event('hybridly.response', [[
+        event(self::RESPONSE_EVENT, [[
             'payload' => $payload->toArray(),
             'request' => $request,
             'version' => $this->hybridly->getVersion(),
             'root_view' => $this->hybridly->getRootView(),
         ]]);
 
+        // If the component is missing and there is no page loaded,
+        // throw an exception because the front-end cannot handle that situation.
+        if (!$this->hybridly->isHybrid($request) && !$this->view->component) {
+            throw MissingViewComponentException::make();
+        }
+
         if ($this->hybridly->isHybrid($request)) {
             return new JsonResponse(
                 data: $payload->toArray(),
                 headers: [
-                    Hybridly::HYBRIDLY_HEADER => 'true',
+                    Header::HYBRID_REQUEST => 'true',
                 ],
             );
         }
@@ -153,15 +155,26 @@ class Factory implements HybridResponse
         );
     }
 
+    protected function transformProperties(array|Arrayable|DataObject $properties): array
+    {
+        if ($properties instanceof Arrayable || $properties instanceof DataObject) {
+            $properties = $properties->toArray();
+        }
+
+        return $properties;
+    }
+
     protected function renderDialog(Request $request, Payload $payload)
     {
+        [$properties] = $this->resolveProperties($payload->dialog, $request);
+
         return new Payload(
             view: $this->getBaseView($payload->dialog->redirectUrl, $request),
             url: $payload->url,
             version: $payload->version,
             dialog: new Dialog(
                 component: $payload->dialog->component,
-                properties: $this->resolveProperties($payload->dialog, $request),
+                properties: $properties,
                 baseUrl: $payload->dialog->baseUrl,
                 redirectUrl: $payload->dialog->redirectUrl,
                 key: $payload->dialog->key,
@@ -186,7 +199,9 @@ class Factory implements HybridResponse
 
         $route = $this->router->getRoutes()->match($request);
 
-        $request->headers->replace($originalRequest->headers->all());
+        /** @var array */
+        $originalHeaders = $originalRequest->headers->all();
+        $request->headers->replace($originalHeaders);
         $request->setJson($originalRequest->json());
         $request->setUserResolver(fn () => $originalRequest->getUserResolver());
         $request->setRouteResolver(fn () => $route);
@@ -228,6 +243,7 @@ class Factory implements HybridResponse
             view: new View(
                 component: $this->view->component,
                 properties: Arr::except($this->view->properties, array_keys($this->hybridly->shared())),
+                deferred: [],
             ),
         );
     }
@@ -237,9 +253,12 @@ class Factory implements HybridResponse
      */
     protected function resolveView(View $view, Request $request): View
     {
+        [$properties, $deferred] = $this->resolveProperties($view, $request);
+
         return new View(
             component: $view->component,
-            properties: $this->resolveProperties($view, $request),
+            properties: $properties,
+            deferred: $deferred,
         );
     }
 
