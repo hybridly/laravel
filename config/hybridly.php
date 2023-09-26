@@ -57,6 +57,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tables
+    |--------------------------------------------------------------------------
+    | The `tables` option defines the endpoint that will be used to
+    | invoke table actions, as well as the name of the route that
+    | will be used to generate the endpoint URL.
+    |
+    | See: https://hybridly.dev/guide/tables.html
+    */
+    'tables' => [
+        'enable_actions' => true,
+        'actions_endpoint' => 'invoke',
+        'actions_endpoint_name' => 'hybridly.action.invoke',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | i18n
     |--------------------------------------------------------------------------
     | You can chose where the generated internationalization JSON file
@@ -82,10 +98,10 @@ return [
     |--------------------------------------------------------------------------
     | Testing
     |--------------------------------------------------------------------------
-    | When `ensure_pages_exist` is enabled, Hybridly will ensure that pages
+    | When `ensure_views_exist` is enabled, Hybridly will ensure that views
     | actually exist on the disk when hybrid testing utilities are used.
     */
     'testing' => [
-        'ensure_pages_exist' => true,
+        'ensure_views_exist' => true,
     ],
 ];

@@ -4,6 +4,7 @@ namespace Hybridly\Refining\Concerns;
 
 use Hybridly\Refining\Contracts\Refiner;
 use Hybridly\Refining\Refine;
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\Request;
 
 /** @mixin Refine */
@@ -15,17 +16,13 @@ trait HasRefiners
 
     public function addRefiners(iterable $refiners): static
     {
+        if ($refiners instanceof Arrayable) {
+            $refiners = $refiners->toArray();
+        }
+
         $this->refiners = array_merge($this->refiners, $refiners);
 
         return $this;
-    }
-
-    /**
-     * @return array<Refiner>
-     */
-    protected function getRefiners(): array
-    {
-        return $this->refiners;
     }
 
     /**
@@ -55,12 +52,18 @@ trait HasRefiners
             return $sorts->first(fn (string $sort) => ltrim($sort, '-') === $property);
         };
 
-        $sort = $this->evaluate($callback, [
-            'request' => $this->getRequest(),
-            'scope' => $this->formatScope($this->getSortsKey()),
-            'property' => $property,
-            'alias' => $alias,
-        ]);
+        $sort = $this->evaluate(
+            value: $callback,
+            named: [
+                'request' => $this->getRequest(),
+                'scope' => $this->formatScope($this->getSortsKey()),
+                'property' => $property,
+                'alias' => $alias,
+            ],
+            typed: [
+                Request::class => $this->getRequest(),
+            ],
+        );
 
         // If we didn't get a sort value, there is no sort.
         if (!$sort) {
@@ -94,5 +97,13 @@ trait HasRefiners
             'property' => $property,
             'alias' => $alias,
         ]);
+    }
+
+    /**
+     * @return array<Refiner>
+     */
+    protected function getRefiners(): array
+    {
+        return $this->refiners;
     }
 }

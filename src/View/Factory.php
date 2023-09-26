@@ -21,11 +21,11 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class Factory implements HybridResponse
 {
-    protected View $view;
-    protected View $dialogView;
-    protected ?string $dialogBaseUrl = null;
-
     public const RESPONSE_EVENT = 'hybridly.response';
+
+    protected ?View $view = null;
+    protected ?View $dialogView = null;
+    protected ?string $dialogBaseUrl = null;
 
     public function __construct(
         protected Hybridly $hybridly,
