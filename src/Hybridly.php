@@ -18,25 +18,8 @@ final class Hybridly
     use Conditionable;
     use Macroable;
 
-    public const DEFAULT_ROOT_VIEW = 'root';
-
     public function __construct(
         private readonly VueViewFinder $finder,
     ) {
-    }
-
-    /**
-     * Flashes data to the session.
-     * @deprecated
-     */
-    public function flash(array|string $key, mixed $value = null): static
-    {
-        $key = \is_array($key) ? $key : [$key => $value];
-
-        foreach ($key as $k => $v) {
-            session()->flash($k, $v);
-        }
-
-        return $this;
     }
 }

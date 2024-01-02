@@ -3,7 +3,9 @@
 namespace Hybridly\Commands;
 
 use Hybridly\Hybridly;
+use Hybridly\Support\Configuration\Configuration;
 use Hybridly\Support\RouteExtractor;
+use Hybridly\Support\Version;
 use Illuminate\Console\Command;
 
 class PrintConfigurationCommand extends Command
@@ -22,11 +24,19 @@ class PrintConfigurationCommand extends Command
     public function handle(): int
     {
         $configuration = [
+            'versions' => [
+                'composer' => Version::getComposerVersion(),
+                'npm' => Version::getNpmVersion(),
+                'is_latest' => Version::isLatestVersion(),
+                'latest' => Version::getLatestVersion(),
+            ],
             'architecture' => [
-                'root' => config('hybridly.architecture.root', 'resources'),
+                'root_directory' => Configuration::get()->architecture->rootDirectory,
+                'components_directory' => Configuration::get()->architecture->componentsDirectory,
+                'application_main_path' => Configuration::get()->architecture->getApplicationMainPath(),
             ],
             'components' => [
-                'eager' => (bool) config('hybridly.architecture.eager_load_views', true),
+                'eager' => Configuration::get()->architecture->eagerLoadViews,
                 'directories' => $this->hybridly->getViewFinder()->getLoadedDirectories(),
                 'layouts' => $this->hybridly->getViewFinder()->getLayouts(),
                 'views' => $this->hybridly->getViewFinder()->getViews(),

@@ -3,9 +3,12 @@
 namespace Hybridly\Support;
 
 use Exception;
+use Hybridly\Support\Configuration\Configuration;
 
 final class VueViewFinder
 {
+    protected const DEFAULT_DEPTH = 20;
+
     /** @var array<{path: string, identifier: string, namespace: string}> */
     protected array $views = [];
 
@@ -22,22 +25,29 @@ final class VueViewFinder
     protected array $extensions = [];
 
     public function __construct(
-        private readonly \Illuminate\Config\Repository $config,
+        private readonly Configuration $configuration,
     ) {
         $this->extensions = array_map(
             callback: fn (string $extension) => ".{$extension}",
-            array: $config->get('hybridly.architecture.extensions', ['vue', 'tsx']),
+            array: $configuration->architecture->extensions,
         );
     }
 
     /**
      * Loads view files from the given directory and associates them to the given namespace.
      */
-    public function loadViewsFrom(string $directory, null|string|array $namespace = null): static
+    public function loadViewsFrom(string $directory, null|string|array $namespace = null, ?int $depth = null): static
     {
-        $this->views = array_merge($this->views, $this->loadVueFilesFrom(
+        $this->loadDirectory($directory);
+        $this->views = array_merge($this->views, $this->findVueFiles(
             directory: $directory,
+            baseDirectory: $directory,
             namespace: $namespace,
+            depth: $depth,
+            filter: fn (string $file) => !\in_array($file, [
+                $this->configuration->architecture->layoutsDirectory,
+                $this->configuration->architecture->componentsDirectory,
+            ], strict: true),
         ));
 
         return $this;
@@ -48,8 +58,10 @@ final class VueViewFinder
      */
     public function loadLayoutsFrom(string $directory, null|string|array $namespace = null): static
     {
-        $this->layouts = array_merge($this->layouts, $this->loadVueFilesFrom(
+        $this->loadDirectory($directory);
+        $this->layouts = array_merge($this->layouts, $this->findVueFiles(
             directory: $directory,
+            baseDirectory: $directory,
             namespace: $namespace,
         ));
 
@@ -61,8 +73,10 @@ final class VueViewFinder
      */
     public function loadComponentsFrom(string $directory, null|string|array $namespace = null): static
     {
-        $this->components = array_merge($this->components, $this->loadVueFilesFrom(
+        $this->loadDirectory($directory);
+        $this->components = array_merge($this->components, $this->findVueFiles(
             directory: $directory,
+            baseDirectory: $directory,
             namespace: $namespace,
         ));
 
@@ -83,6 +97,44 @@ final class VueViewFinder
         $this->loadedDirectories[] = $this->normalizeDirectory($realpth);
 
         return $this;
+    }
+
+    /**
+     * Loads a namespaced module and its views, layouts and components.
+     */
+    public function loadModuleFrom(string $directory, null|string|array $namespace, bool $recursive): static
+    {
+        if ($this->isDirectoryLoaded($directory)) {
+            return $this;
+        }
+
+        $namespace ??= str($directory)->basename()->kebab();
+
+        $this->loadDirectory($directory);
+
+        rescue(fn () => $this->loadViewsFrom($recursive ? $directory : ($directory . '/' . $this->configuration->architecture->viewsDirectory), $namespace), report: false);
+        rescue(fn () => $this->loadLayoutsFrom($directory . '/' . $this->configuration->architecture->layoutsDirectory, $namespace), report: false);
+        rescue(fn () => $this->loadComponentsFrom($directory . '/' . $this->configuration->architecture->componentsDirectory, $namespace), report: false);
+
+        return $this;
+    }
+
+    /**
+     * Loads all modules in the given directory.
+     */
+    public function loadModulesFrom(string $directory, bool $recursive): void
+    {
+        foreach (scandir($directory) as $namespace) {
+            if (\in_array($namespace, ['.', '..'], true)) {
+                continue;
+            }
+
+            $this->loadModuleFrom(
+                directory: $directory . '/' . $namespace,
+                namespace: $namespace,
+                recursive: $recursive,
+            );
+        }
     }
 
     public function isDirectoryLoaded(string $directory): bool
@@ -138,25 +190,17 @@ final class VueViewFinder
     /**
      * @return array<{path: string, identifier: string}>
      */
-    protected function loadVueFilesFrom(string $directory, null|string|array $namespace = null): array
+    protected function findVueFiles(string $directory, string $baseDirectory, null|string|array $namespace = null, ?int $depth = null, ?\Closure $filter = null): array
     {
-        $this->loadDirectory($directory);
+        $depth ??= self::DEFAULT_DEPTH;
+
+        if ($depth === 0) {
+            return [];
+        }
 
         $namespace = \is_array($namespace) ? implode('-', $namespace) : $namespace;
-        $namespace = str($namespace ?? 'default')->basename()->kebab();
-
-        return $this->findVueFiles(
-            directory: $directory,
-            baseDirectory: $directory,
-            namespace: $namespace,
-        );
-    }
-
-    /**
-     * @return array<{path: string, identifier: string}>
-     */
-    protected function findVueFiles(string $directory, string $baseDirectory, string $namespace): array
-    {
+        $namespace = str($namespace ?? 'default')->basename()->kebab()->toString();
+        $filter ??= fn () => true;
         $files = [];
 
         foreach (scandir($directory) as $file) {
@@ -164,10 +208,14 @@ final class VueViewFinder
                 continue;
             }
 
+            if (!$filter($file, $directory)) {
+                continue;
+            }
+
             $path = $directory . '/' . $file;
 
             if (is_dir($path)) {
-                $files = array_merge($files, $this->findVueFiles($path, $baseDirectory, $namespace));
+                $files = array_merge($files, $this->findVueFiles($path, $baseDirectory, $namespace, $depth - 1, $filter));
             } else {
                 if (str($path)->endsWith($this->extensions)) {
                     $files[] = [
