@@ -51,8 +51,8 @@ final class InvokedActionController
         }
 
         $actions = match ($data::class) {
-            InlineActionData::class => $table->getInlineActions(),
-            BulkActionData::class => $table->getBulkActions(),
+            InlineActionData::class => $table->getInlineActions(showHidden: true),
+            BulkActionData::class => $table->getBulkActions(showHidden: true),
         };
 
         if (!$action = $actions->first(fn (BaseAction $action) => $action->getName() === $data->action)) {
@@ -70,8 +70,8 @@ final class InvokedActionController
          */
         [$table, $action] = $this->resolveAction($data);
 
-        $model = $table->getModelClass();
-        $record = $model::findOrFail($data->recordId);
+        $modelClass = $table->getModelClass();
+        $record = $action->resolveModel($modelClass, $data);
         $result = $table->evaluate(
             value: $action->getAction(),
             named: [

@@ -2,15 +2,19 @@
 
 use Hybridly\Tables\Table;
 use Hybridly\Tests\Fixtures\Database\ProductFactory;
+use Hybridly\Tests\Fixtures\Database\UserFactory;
 use Hybridly\Tests\Fixtures\Vendor;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTable;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTableWithActions;
+use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTableWithConditionallyHiddenStuff;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTableWithData;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTableWithHiddenStuff;
+use Hybridly\Tests\Laravel\Tables\Fixtures\BasicProductsTableWithSoftDeleteAction;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicScopedProductsTable;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicTableWithConstructor;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicTableWithDependencyInjection;
 use Hybridly\Tests\Laravel\Tables\Fixtures\BasicTableWithDependencyInjectionAndArguments;
+use Illuminate\Support\Facades\Auth;
 
 use function Pest\Laravel\post;
 
@@ -34,6 +38,13 @@ it('can transform records using Laravel Data', function () {
     expect(BasicProductsTableWithData::make())->toMatchSnapshot();
 });
 
+it('includes authorization on records when using Laravel Data', function () {
+    Auth::login(UserFactory::new()->create());
+    ProductFactory::createImmutable();
+
+    expect(BasicProductsTableWithData::make())->toMatchSnapshot();
+});
+
 it('hides hidden refinements, columns and actions in serialization', function () {
     ProductFactory::createImmutable();
     expect(BasicProductsTableWithHiddenStuff::make())->toMatchSnapshot();
@@ -53,6 +64,41 @@ it('can execute inline actions', function () {
     ])->assertRedirect();
 
     expect(BasicProductsTableWithActions::$name)->toBe($product->name);
+});
+
+it('can execute inline action for soft deleted records', function () {
+    Table::encodeIdUsing(static fn () => BasicProductsTableWithSoftDeleteAction::class);
+    Table::decodeIdUsing(static fn () => BasicProductsTableWithSoftDeleteAction::class);
+
+    $product = ProductFactory::createImmutable();
+    $product->delete();
+
+    post(config('hybridly.tables.actions_endpoint'), [
+        'type' => 'action:inline',
+        'action' => 'say_my_name',
+        'tableId' => BasicProductsTableWithSoftDeleteAction::class,
+        'recordId' => $product->id,
+    ])->assertRedirect();
+
+    expect(BasicProductsTableWithSoftDeleteAction::$name)->toBe($product->name);
+});
+
+it('can execute a conditionally hidden inline actions', function () {
+    Table::encodeIdUsing(static fn () => BasicProductsTableWithConditionallyHiddenStuff::class);
+    Table::decodeIdUsing(static fn () => BasicProductsTableWithConditionallyHiddenStuff::class);
+
+    $product = ProductFactory::createImmutable();
+
+    $this->withoutExceptionHandling();
+
+    post(config('hybridly.tables.actions_endpoint'), [
+        'type' => 'action:inline',
+        'action' => 'say_my_name',
+        'tableId' => BasicProductsTableWithConditionallyHiddenStuff::class,
+        'recordId' => $product->id,
+    ])->assertRedirect();
+
+    expect(BasicProductsTableWithConditionallyHiddenStuff::$name)->toBe($product->name);
 });
 
 it('can execute bulk actions with all records', function () {
