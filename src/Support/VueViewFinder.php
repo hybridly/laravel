@@ -42,10 +42,10 @@ final class VueViewFinder
             baseDirectory: $directory,
             namespace: $namespace,
             depth: $depth,
-            filter: fn (string $file) => !\in_array($file, [
+            filter: fn (string $file) => !\in_array($file, array_merge($this->configuration->architecture->excludedViewsDirectories, [
                 $this->configuration->architecture->layoutsDirectory,
                 $this->configuration->architecture->componentsDirectory,
-            ], strict: true),
+            ]), strict: true),
         ));
 
         return $this;
@@ -243,13 +243,17 @@ final class VueViewFinder
      */
     protected function getIdentifier(string $path, string $baseDirectory, string $namespace): string
     {
-        return str($path)
-            ->after($baseDirectory)
-            ->ltrim('/\\')
-            ->replace(['/', '\\'], '.')
-            ->replace($this->extensions, '')
+        return str(
+            str($path)
+                ->after($baseDirectory)
+                ->ltrim('/\\')
+                ->replace(['/', '\\'], '.')
+                ->replace($this->extensions, '')
+                ->explode('.')
+                ->map(fn (string $str) => str($str)->kebab())
+                ->join('.'),
+        )
             ->when($namespace !== 'default')
-            ->prepend("{$namespace}::")
-            ->lower();
+            ->prepend("{$namespace}::");
     }
 }
