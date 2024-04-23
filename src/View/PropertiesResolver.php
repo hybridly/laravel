@@ -1,9 +1,15 @@
 <?php
 
-namespace Hybridly\Support;
+namespace Hybridly\View;
 
+use Hybridly\Support\Arr;
+use Hybridly\Support\CaseConverter;
 use Hybridly\Support\Configuration\Configuration;
 use Hybridly\Support\Configuration\Properties;
+use Hybridly\Support\Deferred;
+use Hybridly\Support\Header;
+use Hybridly\Support\Hybridable;
+use Hybridly\Support\Partial;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -72,6 +78,10 @@ final class PropertiesResolver
                 $value = $value->toArray();
             }
 
+            if ($value instanceof Hybridable) {
+                $value = $value->toHybridArray();
+            }
+
             if (\is_array($value)) {
                 $deferred = array_merge($deferred, $this->resolveDeferredProperties($value, $path ? ("{$path}.{$key}") : $key));
             }
@@ -92,6 +102,10 @@ final class PropertiesResolver
         foreach ($properties as $key => $value) {
             if ($value instanceof Arrayable) {
                 $value = $value->toArray();
+            }
+
+            if ($value instanceof Hybridable) {
+                $value = $value->toHybridArray();
             }
 
             if (\is_array($value)) {
