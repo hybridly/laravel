@@ -36,8 +36,11 @@
     },
     "records": [
         {
-            "id": 1,
-            "name": "AirPods"
+            "name": {
+                "extra": [],
+                "value": "AirPods"
+            },
+            "__hybridId": 1
         }
     ],
     "paginator": {
