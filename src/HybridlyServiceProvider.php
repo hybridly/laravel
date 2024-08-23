@@ -166,7 +166,7 @@ class HybridlyServiceProvider extends PackageServiceProvider
 
         /** Serves a hybrid route. */
         Router::macro('hybridly', function (string $uri, string $component, array $properties = []) {
-            /** @phpstan-ignore-next-line */
+            /** @var Router $this */
             return $this->match(['GET', 'HEAD'], $uri, Controller::class)
                 ->defaults('component', $component)
                 ->defaults('properties', $properties);
