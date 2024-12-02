@@ -7,7 +7,7 @@ use Spatie\LaravelData\Lazy;
 
 use function Hybridly\Testing\partial_headers;
 
-function resolve_properties(array $properties, array $headers = [], array $persisted = [], bool $partial = false, array $only = null, array $except = null): array
+function resolve_properties(array $properties, array $headers = [], array $persisted = [], bool $partial = false, ?array $only = null, ?array $except = null): array
 {
     $component = 'test-component';
     $request = Request::createFrom(request());

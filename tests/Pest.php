@@ -54,7 +54,7 @@ function make_hybrid_mock_request(string $component = 'test', mixed $properties 
     );
 }
 
-function mock_refiner(array $refiners, array $query = null, \Closure $callback = null, string|Builder $classOrQuery = Product::class, bool $apply = false): Refine
+function mock_refiner(array $refiners, ?array $query = null, ?\Closure $callback = null, string|Builder $classOrQuery = Product::class, bool $apply = false): Refine
 {
     $request = Request::createFromGlobals();
 

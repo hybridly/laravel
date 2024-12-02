@@ -19,7 +19,7 @@ if (!\function_exists('Hybridly\is_hybrid')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#is-hybrid
      */
-    function is_hybrid(Request $request = null): bool
+    function is_hybrid(?Request $request = null): bool
     {
         $request ??= request();
 
@@ -33,7 +33,7 @@ if (!\function_exists('Hybridly\is_partial')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#is-partial
      */
-    function is_partial(Request $request = null): bool
+    function is_partial(?Request $request = null): bool
     {
         $request ??= request();
 
@@ -51,7 +51,7 @@ if (!\function_exists('Hybridly\view')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#view
      */
-    function view(string $component = null, array|Arrayable|DataObject $properties = []): Factory
+    function view(?string $component = null, array|Arrayable|DataObject $properties = []): Factory
     {
         return resolve(Factory::class)->view($component, $properties);
     }
@@ -63,7 +63,7 @@ if (!\function_exists('Hybridly\dialog')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#dialog
      */
-    function dialog(string $component = null, array|Arrayable|DataObject $properties = [], string $base = '', bool $force = false, bool $keep = false): Factory
+    function dialog(?string $component = null, array|Arrayable|DataObject $properties = [], string $base = '', bool $force = false, bool $keep = false): Factory
     {
         return resolve(Factory::class)
             ->view($component, $properties)
