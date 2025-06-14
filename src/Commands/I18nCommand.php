@@ -30,7 +30,7 @@ class I18nCommand extends Command
     {
         $tree = [];
 
-        if (!$files = @scandir($directory)) {
+        if (! ($files = @scandir($directory))) {
             return $tree;
         }
 
@@ -58,7 +58,7 @@ class I18nCommand extends Command
                 }
 
                 if ($extension === '.php') {
-                    $tree[$fileName] = require($pathName);
+                    $tree[$fileName] = require $pathName;
                 }
             }
         }
@@ -71,12 +71,12 @@ class I18nCommand extends Command
      */
     protected function getLocales(): array
     {
-        if (!$files = @scandir($this->getLangPath())) {
+        if (! ($files = @scandir($this->getLangPath()))) {
             return [];
         }
 
         return collect($files)
-            ->filter(fn ($file) => !\in_array($file, ['.', '..'], true))
+            ->filter(fn ($file) => ! \in_array($file, ['.', '..'], true))
             ->map(fn ($file) => str($file)->beforeLast('.')->toString())
             ->unique()
             ->values()
@@ -86,7 +86,7 @@ class I18nCommand extends Command
     /**
      * Gets the translations as an array.
      */
-    protected function getTranslations(string $lang = null): array
+    protected function getTranslations(?string $lang = null): array
     {
         $translations = $this->makeFolderFilesTree($this->getLangPath());
 
@@ -100,7 +100,7 @@ class I18nCommand extends Command
     /**
      * Gets the translations as an JSON-encoded string.
      */
-    protected function getTranslationsAsJson(string $lang = null): string
+    protected function getTranslationsAsJson(?string $lang = null): string
     {
         return str(json_encode($this->getTranslations($lang)))
             ->replaceMatches('/:(\w+)/', '{${1}}')
@@ -125,7 +125,7 @@ class I18nCommand extends Command
         // Laravel-provided langs and custom ones.
         $langPath = Configuration::get()->internationalization->langPath;
 
-        if (!File::isDirectory($langPath)) {
+        if (! File::isDirectory($langPath)) {
             return base_path('vendor/laravel/framework/src/Illuminate/Translation/lang');
         }
 
@@ -135,7 +135,7 @@ class I18nCommand extends Command
     /**
      * Gets the path for the given locale.
      */
-    protected function getLocalePath(string $locale = null): string
+    protected function getLocalePath(?string $locale = null): string
     {
         return implode(\DIRECTORY_SEPARATOR, [
             $this->getLocalesPath(),
@@ -167,7 +167,7 @@ class I18nCommand extends Command
         foreach ($this->getLocales() as $locale) {
             File::ensureDirectoryExists(\dirname($path = $this->getLocalePath($locale)));
 
-            if (!File::put($path, $this->getTranslationsAsJson($locale))) {
+            if (! File::put($path, $this->getTranslationsAsJson($locale))) {
                 return false;
             }
 
@@ -194,7 +194,7 @@ class I18nCommand extends Command
         return $result;
     }
 
-    protected function writeSuccess(string $path, string $locale = null): void
+    protected function writeSuccess(string $path, ?string $locale = null): void
     {
         $this->components->info(
             \sprintf(
