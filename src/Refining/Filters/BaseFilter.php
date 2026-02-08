@@ -14,14 +14,19 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
 {
     use Components\Concerns\Configurable;
     use Components\Concerns\HasLabel;
+    use Components\Concerns\HasIcon;
     use Components\Concerns\HasMetadata;
     use Components\Concerns\HasName;
     use Components\Concerns\IsHideable;
     use Concerns\HasDefaultValue;
+    use Concerns\HasOperators;
     use Concerns\HasType;
+    use Concerns\HasPreviewLabel;
     use Refining\Concerns\QualifiesColumns;
+    use Refining\Concerns\HasRefineInstance;
 
-    protected mixed $value = null;
+    protected ?Refining\Filters\QueryFilter $filter = null;
+    protected Refine $refine;
 
     public function __construct(
         protected string $property,
@@ -31,16 +36,27 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
         $this->label(str($this->getName())->headline()->lower()->ucfirst());
         $this->type('filter');
         $this->configure();
+        $this->appendMetadata(fn () => array_filter([
+            'preview_label' => $this->getPreviewLabel(),
+        ]));
     }
 
-    public function refine(Refine $refiner, Builder $builder): void
+    public function refine(Refine $refine, Builder $builder): void
     {
-        if (\is_null($this->value = $refiner->getFilterValueFromRequest($this->property, $this->alias) ?? $this->getDefaultValue())) {
+        $this->setRefineInstance($refine);
+
+        $this->filter = $refine->getQueryFilterFromRequest(
+            property: $this->property,
+            alias: $this->alias,
+            default: $this->getDefaultValue(),
+        );
+
+        if (\is_null($this->filter)) {
             return;
         }
 
         try {
-            $this->apply($builder, $this->value, $this->property);
+            $this->apply($builder, $this->filter, $this->property);
         } catch (\TypeError $th) {
             if (str_contains($th->getMessage(), 'Argument #2 ($')) {
                 throw ValidationException::withMessages([
@@ -54,7 +70,7 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
 
     public function isActive(): bool
     {
-        return ! \is_null($this->value);
+        return ! \is_null($this->filter);
     }
 
     public function jsonSerialize(): mixed
@@ -64,10 +80,16 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
             'hidden' => $this->isHidden(),
             'label' => $this->getLabel(),
             'type' => $this->getType(),
+            'icon' => $this->getIcon(),
             'metadata' => $this->getMetadata(),
             'is_active' => $this->isActive(),
-            'value' => $this->value,
+            'value' => $this->filter?->value,
+            'search_query' => $this->filter?->search,
+            'operator' => $this->resolveOperator(),
+            'default_operator' => $this->getDefaultOperator(),
+            'supported_operators' => $this->getSupportedOperators(),
             'default' => $this->defaultValue,
+            'options' => $this->filter?->options ?? [],
         ];
     }
 
@@ -79,8 +101,6 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
     protected function resolveDefaultClosureDependencyForEvaluationByType(string $parameterType): array
     {
         return match ($parameterType) {
-            Refiner::class => [$this->filter],
-            Filter::class => [$this->filter],
             default => [],
         };
     }
@@ -89,9 +109,11 @@ abstract class BaseFilter extends Components\Component implements Refiner, Filte
     {
         return match ($parameterName) {
             'filter' => [$this->filter],
-            'value' => [$this->value],
+            'value' => [$this->filter?->value],
+            'search' => [$this->filter?->search],
             'property' => [$this->property],
             'alias' => [$this->alias],
+            'parentBuilder' => [$this->parentBuilder],
             default => [],
         };
     }

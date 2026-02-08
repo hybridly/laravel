@@ -2,26 +2,25 @@
 
 namespace Hybridly\Refining\Filters;
 
-use Hybridly\Refining\Concerns\SupportsRelationConstraints;
 use Hybridly\Refining\Filters\Operator;
+use Hybridly\Refining\Refine;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 
-class BooleanFilter extends BaseFilter
+class TernaryFilter extends BaseFilter
 {
-    use SupportsRelationConstraints;
-
     protected ?\Closure $trueQuery = null;
     protected ?\Closure $falseQuery = null;
+    protected ?\Closure $blankQuery = null;
+    protected string|\Closure|null $placeholder = null;
     protected string|\Closure|null $trueLabel = null;
     protected string|\Closure|null $falseLabel = null;
 
     protected function setUp(): void
     {
-        $this->type('boolean');
+        $this->type('ternary');
 
         $this->supportedOperators([
             Operator::EQUALS,
-            Operator::NOT_EQUALS,
         ]);
 
         $this->defaultOperator(Operator::EQUALS);
@@ -29,14 +28,16 @@ class BooleanFilter extends BaseFilter
         $this->appendMetadata(function () {
             $trueLabel = $this->trueLabel ? $this->evaluate($this->trueLabel) : null;
             $falseLabel = $this->falseLabel ? $this->evaluate($this->falseLabel) : null;
+            $placeholder = $this->placeholder ? $this->evaluate($this->placeholder) : null;
 
             return array_filter([
                 'true_label' => $trueLabel,
                 'false_label' => $falseLabel,
+                'placeholder' => $placeholder,
                 'current_value_label' => match ($this->normalizeValue($this->filter?->value)) {
                     true => $trueLabel,
                     false => $falseLabel,
-                    default => null,
+                    default => $placeholder,
                 },
             ]);
         });
@@ -52,37 +53,52 @@ class BooleanFilter extends BaseFilter
 
     public function apply(Builder $builder, QueryFilter $filter, string $property): void
     {
-        $value = $this->normalizeValue($filter->value);
+        $normalizedValue = $this->normalizeValue($filter->value);
 
-        if (\is_null($value)) {
-            return;
-        }
-
-        if ($value === true && $this->trueQuery !== null) {
+        if ($normalizedValue === true && $this->trueQuery !== null) {
             $this->evaluate(
                 value: $this->trueQuery,
                 named: [
                     'builder' => $builder,
                     'query' => $builder,
-                    'value' => $value,
+                    'value' => $normalizedValue,
                     'property' => $property,
                 ],
                 typed: [
                     Builder::class => $builder,
                 ],
             );
-
-            return;
         }
 
-        if ($value === false && $this->falseQuery !== null) {
+        if ($normalizedValue === false && $this->falseQuery !== null) {
             $this->evaluate(
                 value: $this->falseQuery,
                 named: [
                     'builder' => $builder,
                     'query' => $builder,
-                    'value' => $value,
+                    'value' => $normalizedValue,
                     'property' => $property,
+                ],
+                typed: [
+                    Builder::class => $builder,
+                ],
+            );
+        }
+    }
+
+    public function refine(Refine $refiner, Builder $builder): void
+    {
+        $this->filter = $refiner->getQueryFilterFromRequest($this->property, $this->alias);
+
+        // If value is null/blank and we have a blank query, apply it
+        if ($this->filter === null && $this->blankQuery !== null) {
+            $this->evaluate(
+                value: $this->blankQuery,
+                named: [
+                    'builder' => $builder,
+                    'query' => $builder,
+                    'value' => null,
+                    'property' => $this->property,
                 ],
                 typed: [
                     Builder::class => $builder,
@@ -92,28 +108,17 @@ class BooleanFilter extends BaseFilter
             return;
         }
 
-        $this->applyRelationConstraint(
-            builder: $builder,
-            property: $property,
-            callback: fn (Builder $builder, string $column) => $builder->where(
-                column: $this->qualifyColumn($builder, $column),
-                operator: match ($this->resolveOperator()) {
-                    Operator::NOT_EQUALS => '!=',
-                    default => '=',
-                },
-                value: $value,
-                boolean: $this->getQueryBoolean(),
-            ),
-        );
+        parent::refine($refiner, $builder);
     }
 
     /**
-     * Defines the queries to apply based on the boolean state.
+     * Defines the queries to apply based on the ternary state.
      */
-    public function queries(?\Closure $true = null, ?\Closure $false = null): static
+    public function queries(?\Closure $true = null, ?\Closure $false = null, ?\Closure $blank = null): static
     {
         $this->trueQuery = $true;
         $this->falseQuery = $false;
+        $this->blankQuery = $blank;
 
         return $this;
     }
@@ -121,7 +126,7 @@ class BooleanFilter extends BaseFilter
     /**
      * Defines the labels for the true and false states.
      */
-    public function labels(null|string|\Closure $true = null, null|string|\Closure $false = null): static
+    public function labels(null|string|\Closure $true = null, null|string|\Closure $false = null, null|string|\Closure $placeholder = null): static
     {
         if ($true !== null) {
             $this->trueLabel($true);
@@ -130,6 +135,20 @@ class BooleanFilter extends BaseFilter
         if ($false !== null) {
             $this->falseLabel($false);
         }
+
+        if ($placeholder !== null) {
+            $this->placeholder($placeholder);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Defines the placeholder text for the filter.
+     */
+    public function placeholder(string|\Closure $placeholder): static
+    {
+        $this->placeholder = $placeholder;
 
         return $this;
     }
