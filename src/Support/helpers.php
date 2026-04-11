@@ -2,14 +2,14 @@
 
 namespace Hybridly;
 
-use Hybridly\Support\Deferred;
+use Closure;
 use Hybridly\Support\Header;
-use Hybridly\Support\Partial;
+use Hybridly\Support\Properties\Deferred;
+use Hybridly\Support\Properties\Merge;
+use Hybridly\Support\Properties\OnDemand;
 use Hybridly\Support\Target;
 use Hybridly\View\Factory;
-use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\Request;
-use Spatie\LaravelData\Contracts\TransformableData;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -51,9 +51,9 @@ if (! \function_exists('Hybridly\view')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#view
      */
-    function view(?string $component = null, array|Arrayable|TransformableData $properties = []): Factory
+    function view(string $component, iterable $properties = []): Factory
     {
-        return resolve(Factory::class)->view($component, $properties);
+        return resolve(Factory::class)->withView($component, $properties);
     }
 }
 
@@ -61,43 +61,52 @@ if (! \function_exists('Hybridly\dialog')) {
     /**
      * Returns a dialog with the given properties and base view.
      *
-     * @param string $component The component to render in the dialog.
-     * @param array|Arrayable|TransformableData $properties The properties to pass to the component.
-     * @param string $base The URL to the base page to load in the background of the dialog.
-     * @param bool $force Whether to force the base page to load even if the current page is the same as the base page.
-     * @param bool $keep Whether to keep the current state of the page in the background instead of updating properties. Useful for performance.
+     * Setting `redirectToBase` to `true` will always force a redirect to the base view when rendering the dialog instead of opening it in the current page.
+     * Setting `preserveCurrentBase` to `true` will prevent returning an updated base view when rendering the dialog from.
      *
      * @see https://hybridly.dev/api/laravel/functions.html#dialog
      */
-    function dialog(?string $component = null, array|Arrayable|TransformableData $properties = [], string $base = '', bool $force = false, bool $keep = false): Factory
+    function dialog(string $component, iterable $properties, string $baseUrl, bool $alwaysRedirectToBase = false, bool $preserveBaseOnClose = false): Factory
     {
         return resolve(Factory::class)
-            ->view($component, $properties)
-            ->base($base, force: $force, keep: $keep);
+            ->withView($component, $properties)
+            ->configureDialog($baseUrl, $alwaysRedirectToBase, $preserveBaseOnClose);
     }
 }
 
 if (! \function_exists('Hybridly\properties')) {
     /**
-     * Returns properties for an existing view.
+     * Updates the properties for an existing view.
      *
      * @see https://hybridly.dev/api/laravel/functions.html#properties
      */
-    function properties(array|Arrayable|TransformableData $properties): Factory
+    function properties(iterable $properties): Factory
     {
-        return resolve(Factory::class)->properties($properties);
+        return resolve(Factory::class)->withProperties($properties);
     }
 }
 
-if (! \function_exists('Hybridly\partial')) {
+if (! \function_exists('Hybridly\on_demand')) {
     /**
-     * Creates a partial-only property.
+     * Creates a property that is only evaluated when specified in a partial reload.
      *
      * @see https://hybridly.dev/api/laravel/functions.html#partial
      */
-    function partial(\Closure $callback): Partial
+    function on_demand(Closure $callback): OnDemand
     {
-        return new Partial($callback);
+        return new OnDemand($callback);
+    }
+}
+
+if (! \function_exists('Hybridly\merge')) {
+    /**
+     * Specifies that a property should merge itself with its current instance.
+     *
+     * @see https://hybridly.dev/api/laravel/functions.html#merge
+     */
+    function merge(Closure|iterable $value, bool $prepend = false, ?string $uniqueBy = null): Merge
+    {
+        return new Merge($value, $prepend, $uniqueBy);
     }
 }
 
@@ -108,9 +117,14 @@ if (! \function_exists('Hybridly\deferred')) {
      *
      * @see https://hybridly.dev/api/laravel/functions.html#deferred
      */
-    function deferred(\Closure $callback): Deferred
+    function deferred(Closure $callback, ?string $group = null, bool $prepend = false, ?string $uniqueBy = null): Deferred
     {
-        return new Deferred($callback);
+        return new Deferred(
+            callback: $callback,
+            prepend: $prepend,
+            uniqueBy: $uniqueBy,
+            group: $group,
+        );
     }
 }
 

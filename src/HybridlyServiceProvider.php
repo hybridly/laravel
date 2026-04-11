@@ -2,17 +2,13 @@
 
 namespace Hybridly;
 
-use Hybridly\Architecture\ComponentsResolver;
-use Hybridly\Architecture\LazyComponentsResolver;
+use Hybridly\Architecture\ComponentRepository;
+use Hybridly\Architecture\JustInTimeComponentRepository;
 use Hybridly\Commands\GenerateGlobalTypesCommand;
 use Hybridly\Commands\I18nCommand;
-use Hybridly\Commands\InstallCommand;
 use Hybridly\Commands\MakeTableCommand;
 use Hybridly\Commands\PrintConfigurationCommand;
-use Hybridly\Http\Controller;
 use Hybridly\Support\Configuration\Configuration;
-use Hybridly\Support\Data\PartialLazy;
-use Hybridly\Support\RayDumper;
 use Hybridly\Support\Version;
 use Hybridly\Tables\Actions\DataTransferObjects\BulkSelection;
 use Hybridly\Tables\Actions\Http\InvokedActionController;
@@ -22,72 +18,64 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\Foundation\CachesRoutes;
 use Illuminate\Events\Dispatcher;
 use Illuminate\Foundation\Console\AboutCommand;
-use Illuminate\Foundation\Vite;
 use Illuminate\Http\Request;
-use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Vite;
+use Illuminate\Support\ServiceProvider;
 use Illuminate\Testing\TestResponse;
 use Illuminate\View\Compilers\BladeCompiler;
 use Illuminate\View\Factory;
 use Laravel\Octane\Events\RequestReceived;
 use Laravel\Octane\Events\TaskReceived;
 use Laravel\Octane\Events\TickReceived;
-use Spatie\LaravelPackageTools\Package;
-use Spatie\LaravelPackageTools\PackageServiceProvider;
 
-class HybridlyServiceProvider extends PackageServiceProvider
+final class HybridlyServiceProvider extends ServiceProvider
 {
-    public function configurePackage(Package $package): void
-    {
-        $package
-            ->name('hybridly')
-            ->hasConfigFile()
-            ->hasCommand(InstallCommand::class)
-            ->hasCommand(I18nCommand::class)
-            ->hasCommand(PrintConfigurationCommand::class)
-            ->hasCommand(MakeTableCommand::class)
-            ->hasCommand(GenerateGlobalTypesCommand::class);
+    private Configuration $configuration {
+        get => $this->configuration ??= $this->app->make(Configuration::class);
     }
 
-    public function registeringPackage(): void
+    public function register(): void
     {
+        $this->mergeConfigFrom(
+            path: __DIR__ . '/../config/hybridly.php',
+            key: 'hybridly',
+        );
+
         $this->registerBindings();
         $this->registerDirectives();
-        $this->registerMacros();
-        $this->registerTestingMacros();
         $this->registerArchitecture();
-        $this->registerAbout();
+        $this->registerVersion();
+
+        if ($this->app->runningUnitTests()) {
+            $this->registerTestingMacros();
+        }
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                I18nCommand::class,
+                PrintConfigurationCommand::class,
+                MakeTableCommand::class,
+                GenerateGlobalTypesCommand::class,
+            ]);
+
+            $this->registerAbout();
+        }
     }
 
-    public function bootingPackage(): void
+    public function boot(): void
     {
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../config/hybridly.php' => config_path('hybridly.php'),
+            ], 'hybridly-config');
+        }
+
         $this->registerActionsEndpoint();
         $this->registerOctaneListener();
     }
 
-    public function packageBooted(): void
-    {
-        if (class_exists(\Spatie\LaravelData\Lazy::class)) {
-            \Spatie\LaravelData\Lazy::macro('partial', function (\Closure $value): PartialLazy {
-                return new PartialLazy($value);
-            });
-        }
-
-        if (class_exists(\Spatie\LaravelRay\Ray::class)) {
-            $this->app->singleton(RayDumper::class);
-            $dumper = $this->app->get(RayDumper::class);
-
-            \Spatie\LaravelRay\Ray::macro('showHybridRequests', function () use ($dumper) {
-                $dumper->showHybridRequests();
-            });
-
-            \Spatie\LaravelRay\Ray::macro('stopShowingHybridRequests', function () use ($dumper) {
-                $dumper->stopShowingHybridRequests();
-            });
-        }
-    }
-
-    protected function registerOctaneListener(): void
+    private function registerOctaneListener(): void
     {
         if (! class_exists(\Laravel\Octane\Octane::class)) {
             return;
@@ -101,30 +89,35 @@ class HybridlyServiceProvider extends PackageServiceProvider
         }
     }
 
-    protected function registerArchitecture(): void
+    private function registerArchitecture(): void
     {
         // Registers the application directory so the root view can be loaded
         $this->callAfterResolving('view', function (Factory $view): void {
-            $view->addLocation(base_path(\dirname($this->getConfiguration()->architecture->applicationMainPath)));
+            $view->addLocation(base_path(\dirname($this->configuration->architecture->applicationMainPath)));
         });
-
-        // Loads the default module if enabled
-        if (Configuration::get()->architecture->loadDefaultModule) {
-            $this->app->make(Hybridly::class)->loadModuleFrom(
-                directory: base_path($this->getConfiguration()->architecture->rootDirectory),
-                namespace: 'default',
-            );
-        }
     }
 
-    protected function registerBindings(): void
+    private function registerBindings(): void
     {
-        $this->app->singleton(Configuration::class, fn (Application $app) => Configuration::fromArray($app->make(Repository::class)->get('hybridly', default: [])));
-        $this->app->singleton(ComponentsResolver::class, fn (Application $app) => new LazyComponentsResolver($app->make(Configuration::class)));
+        // The configuration is depended on in multiple,
+        // places so we bind it to the container first
+        $this->app->singleton(
+            abstract: Configuration::class,
+            concrete: fn (Application $app) => Configuration::fromArray($app->make(Repository::class)->get('hybridly', default: [])),
+        );
+
+        // The component repository is responsible for providing the components available to the front-end,
+        // by default we provide a just-in-time repository that only loads components when they are
+        // requested, which is at the start of the development server or during the build step
+        $this->app->singleton(
+            abstract: ComponentRepository::class,
+            concrete: fn (Application $app) => new JustInTimeComponentRepository($app->make($this->configuration->architecture->componentLoader)),
+        );
+
         $this->app->singleton(Hybridly::class);
     }
 
-    protected function registerDirectives(): void
+    private function registerDirectives(): void
     {
         // Registers @hybridly
         $this->callAfterResolving('blade.compiler', function (BladeCompiler $blade) {
@@ -153,67 +146,66 @@ class HybridlyServiceProvider extends PackageServiceProvider
         $this->app->afterResolving('blade.compiler', function (BladeCompiler $compiler) {
             $compiler->directive('vite', fn (?string $expression = null) => \sprintf(
                 '<?php echo app(%s::class)(%s); ?>',
-                Vite::class,
-                $expression ?: ('"' . $this->getConfiguration()->architecture->applicationMainPath . '"'),
+                \Illuminate\Foundation\Vite::class,
+                $expression ?: ('"' . $this->configuration->architecture->applicationMainPath . '"'),
             ));
         });
     }
 
-    protected function registerMacros(): void
-    {
-        /** Checks if the request is hybrid. */
-        Request::macro('isHybrid', fn () => is_hybrid());
-
-        /** Checks if the request is partial. */
-        Request::macro('isPartial', fn () => is_partial());
-
-        /** Serves a hybrid route. */
-        Router::macro('hybridly', function (string $uri, string $component, array $properties = []) {
-            /** @var Router $this */
-            return $this->match(['GET', 'HEAD'], $uri, Controller::class)
-                ->defaults('component', $component)
-                ->defaults('properties', $properties);
-        });
-    }
-
-    protected function registerTestingMacros(): void
+    private function registerTestingMacros(): void
     {
         TestResponse::mixin(new TestResponseMacros());
     }
 
-    protected function registerAbout(): void
+    private function registerAbout(): void
     {
         AboutCommand::add('Hybridly', fn () => [
             'Version (composer)' => Version::getPrettyComposerVersion(),
             'Version (npm)' => Version::getPrettyNpmVersion(),
-            'Application main' => $this->getConfiguration()->architecture->applicationMainPath,
-            'Extensions' => implode(', ', $this->getConfiguration()->architecture->extensions),
-            'Eager view loading' => $this->getConfiguration()->architecture->eagerLoadViews
+            'Application main' => $this->configuration->architecture->applicationMainPath,
+            'Eager view loading' => $this->configuration->architecture->eagerLoadViews
                 ? '<fg=yellow;options=bold>ENABLED</>'
                 : '<fg=yellow;options=bold>DISABLED</>',
-            'Architecture' => $this->getConfiguration()->architecture->loadDefaultModule
-                ? '<fg=green;options=bold>DEFAULT</>'
-                : '<fg=blue;options=bold>CUSTOM</>',
         ]);
     }
 
-    protected function registerActionsEndpoint(): void
+    private function registerActionsEndpoint(): void
     {
         $this->app->bind(BulkSelection::class, fn ($app) => BulkSelection::fromRequest($app->make(Request::class)));
 
-        if (! $this->getConfiguration()->tables->enableActions) {
+        if (! $this->configuration->tables->enableActions) {
             return;
         }
 
         if (! ($this->app instanceof CachesRoutes && $this->app->routesAreCached())) {
-            Route::post($this->getConfiguration()->tables->actionsEndpoint, InvokedActionController::class)
-                ->middleware($this->getConfiguration()->tables->actionsEndpointMiddleware)
-                ->name($this->getConfiguration()->tables->actionsEndpointName);
+            Route::post($this->configuration->tables->actionsEndpoint, InvokedActionController::class)
+                ->middleware($this->configuration->tables->actionsEndpointMiddleware)
+                ->name($this->configuration->tables->actionsEndpointName);
         }
     }
 
-    private function getConfiguration(): Configuration
+    private function registerVersion(): void
     {
-        return $this->app->make(Configuration::class);
+        $this->app
+            ->make(Hybridly::class)
+            ->resolveVersionUsing(function () {
+                if (class_exists(Vite::class)) {
+                    return Vite::manifestHash();
+                }
+
+                if (config('app.asset_url')) {
+                    return md5(config('app.asset_url'));
+                }
+
+                if (file_exists($manifest = public_path('build/manifest.json'))) {
+                    return md5_file($manifest);
+                }
+
+                if (file_exists($manifest = public_path('build/.vite/manifest.json'))) {
+                    return md5_file($manifest);
+                }
+
+                return null;
+            });
     }
 }

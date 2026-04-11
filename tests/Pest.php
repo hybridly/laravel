@@ -6,15 +6,34 @@ use Hybridly\Tests\Fixtures\Database\Product;
 use Hybridly\Tests\TestCase;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Testing\TestResponse;
 
+use function Hybridly\view;
 use function Pest\Laravel\get;
 
 uses(TestCase::class)
     ->beforeEach(fn () => config()->set('hybridly.testing.ensure_views_exist', false))
     ->in(__DIR__);
 
-function mock_request(string $url = '/', string $method = 'GET', bool $bind = false, bool $hybridly = true, array $headers = [], array $query = []): Request
+function with_components(array|string $paths, \Closure $assertion): void
+{
+    File::ensureDirectoryExists(resource_path());
+    File::cleanDirectory(resource_path());
+
+    foreach ((array) $paths as $path) {
+        $target = resource_path($path);
+
+        File::ensureDirectoryExists(dirname($target));
+        File::put($target, '<template />');
+    }
+
+    $assertion();
+
+    File::cleanDirectory(resource_path());
+}
+
+function mock_request(string $url = '/', string $method = 'GET', bool $bind = false, bool $hybrid = true, array $headers = [], array $query = []): Request
 {
     $request = Request::create($url, $method);
 
@@ -26,7 +45,7 @@ function mock_request(string $url = '/', string $method = 'GET', bool $bind = fa
         $request->headers->add($headers);
     }
 
-    if ($hybridly) {
+    if ($hybrid) {
         $request->headers->add([Header::HYBRID_REQUEST => 'true']);
     }
 
@@ -50,7 +69,7 @@ function make_mock_request(mixed $response, string $url = '/mock-url', array $he
 function make_hybrid_mock_request(string $component = 'test', mixed $properties = [], string $url = '/hybrid-mock-url'): TestResponse
 {
     return make_mock_request(
-        response: hybridly($component, $properties),
+        response: view($component, $properties),
         url: $url,
     );
 }

@@ -6,57 +6,51 @@ use Hybridly\Contracts\HybridResponse;
 use Hybridly\Exceptions\MissingViewComponentException;
 use Hybridly\Hybridly;
 use Hybridly\Support\Arr as SupportArr;
+use Hybridly\Support\Configuration\Configuration;
 use Hybridly\Support\Header;
 use Illuminate\Contracts\Routing\ResponseFactory;
-use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Route;
-use Spatie\LaravelData\Contracts\TransformableData;
+use Illuminate\Support\Facades\App;
+use Illuminate\Support\MessageBag;
+use Illuminate\Support\ViewErrorBag;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
-class Factory implements HybridResponse
+final class Factory implements HybridResponse
 {
-    public const RESPONSE_EVENT = 'hybridly.response';
-
     protected ?View $view = null;
     protected ?View $dialogView = null;
     protected ?string $dialogBaseUrl = null;
     protected bool $redirectToDialogBase = false;
-    protected bool $keepBaseView = false;
+    protected bool $preserveBaseOnClose = false;
 
     public function __construct(
         protected Hybridly $hybridly,
         protected Router $router,
         protected DialogResolver $dialogResolver,
         protected ResponseFactory $responseFactory,
+        protected Configuration $configuration,
     ) {}
 
     /**
-     * Sets the base route for this view, implying a dialog will be rendered.
-     * Setting `force` to `true` will always force a redirect to the base view.
-     * instead of opening the dialog in the current page during hybrid navigations.
-     * Setting `keep` to `true` will avoid returning an updated base view when rendering the dialog from.
+     * Configures the dialog.
+     *
+     * Setting `redirectToBase` to `true` will always force a redirect to the base view when rendering the dialog instead of opening it in the current page.
+     * Setting `preserveCurrentBase` to `true` will prevent returning an updated base view when rendering the dialog from.
      */
-    public function base(string $route, mixed $parameters = null, bool $force = false, bool $keep = false): static
+    public function configureDialog(string $baseUrl, bool $alwaysRedirectToBase = false, bool $preserveBaseOnClose = false): static
     {
-        // In order to provide autocompletion support without adding
-        // a `baseUrl` method, we check if `$route` is a named
-        // route, in which case we call `route` on it.
+        $this->dialogBaseUrl = $baseUrl;
 
-        $this->dialogBaseUrl = Route::has($route)
-            ? route($route, $parameters)
-            : $route;
-
-        if ($force) {
+        if ($alwaysRedirectToBase) {
             $this->redirectToDialogBase = true;
         }
 
-        if ($keep) {
-            $this->keepBaseView = true;
+        if ($preserveBaseOnClose) {
+            $this->preserveBaseOnClose = true;
         }
 
         return $this;
@@ -65,7 +59,7 @@ class Factory implements HybridResponse
     /**
      * Sets the hybridly view data.
      */
-    public function view(?string $component = null, array|Arrayable|TransformableData $properties = []): static
+    public function withView(string $component, iterable $properties = []): static
     {
         $this->view = new View(
             component: $component,
@@ -78,7 +72,7 @@ class Factory implements HybridResponse
     /**
      * Sets the view component.
      */
-    public function component(string $component): static
+    public function withComponent(string $component): static
     {
         $this->view = new View(
             component: $component,
@@ -91,7 +85,7 @@ class Factory implements HybridResponse
     /**
      * Sets the view properties.
      */
-    public function properties(array|Arrayable|TransformableData $properties): static
+    public function withProperties(iterable $properties): static
     {
         $this->view = new View(
             component: $this->view?->component,
@@ -102,15 +96,11 @@ class Factory implements HybridResponse
     }
 
     /**
-     * Adds properties to the view.
+     * Adds a property to the view.
      */
-    public function with(array|string $key, mixed $value = null): static
+    public function withProperty(string $key, mixed $value = null): static
     {
-        if (\is_array($key)) {
-            $this->view->properties = array_merge($this->view->properties, $key);
-        } else {
-            $this->view->properties[$key] = $value;
-        }
+        $this->view->properties[$key] = $value;
 
         return $this;
     }
@@ -120,29 +110,27 @@ class Factory implements HybridResponse
      */
     public function render(): string|false
     {
-        return $this->toResponse(request())
-            ->getContent();
+        return $this->toResponse(request())->getContent();
     }
 
+    /**
+     * Generates a response for the given request.
+     *
+     * @return \Illuminate\Http\Response
+     */
     public function toResponse($request)
     {
         $payload = new Payload(
             view: $this->resolveView($this->view, $request),
             dialog: $this->resolveDialog($request),
             url: $this->resolveUrl($request),
-            version: $this->hybridly->getVersion(),
+            version: $this->hybridly->version,
+            validation: $this->resolveValidation($request),
         );
 
         if ($payload->dialog) {
             $payload = $this->renderDialog($request, $payload);
         }
-
-        event(self::RESPONSE_EVENT, [[
-            'payload' => $payload->toArray(),
-            'request' => $request,
-            'version' => $this->hybridly->getVersion(),
-            'root_view' => $this->hybridly->getRootView(),
-        ]]);
 
         // If the component is missing and there is no page loaded,
         // throw an exception because the front-end cannot handle that situation.
@@ -160,17 +148,12 @@ class Factory implements HybridResponse
         }
 
         return $this->responseFactory->view(
-            view: $this->hybridly->getRootView(),
+            view: $this->configuration->architecture->rootView,
             data: ['payload' => $payload->toArray()],
         );
     }
 
-    protected function transformProperties(array|Arrayable|TransformableData $properties): array
-    {
-        return SupportArr::resolveArrayableProperties($properties);
-    }
-
-    protected function renderDialog(Request $request, Payload $payload)
+    private function renderDialog(Request $request, Payload $payload): Payload
     {
         // Dialogs do not need shared properties, as they are already part of the base view.
         // See: https://github.com/hybridly/hybridly/pull/153
@@ -184,9 +167,9 @@ class Factory implements HybridResponse
             // For performance reason, we may omit computing the base view.
             // This is useful when that view already exists, but
             // only works when coming from an HTML request.
-            view: $this->keepBaseView && $this->hybridly->isHybrid($request)
+            view: $this->preserveBaseOnClose && $this->hybridly->isHybrid($request)
                 ? null
-                : $this->getBaseView(
+                : $this->resolveBaseView(
                     targetUrl: $this->redirectToDialogBase
                         ? $payload->dialog->baseUrl
                         : $payload->dialog->redirectUrl,
@@ -194,6 +177,7 @@ class Factory implements HybridResponse
                 ),
             url: $payload->url,
             version: $payload->version,
+            validation: $payload->validation,
             dialog: new Dialog(
                 component: $payload->dialog->component,
                 properties: $properties,
@@ -209,7 +193,7 @@ class Factory implements HybridResponse
     /**
      * Gets the base view for the given URL.
      */
-    protected function getBaseView(string $targetUrl, Request $originalRequest): View
+    private function resolveBaseView(string $targetUrl, Request $originalRequest): View
     {
         $request = Request::create(
             uri: $targetUrl,
@@ -234,7 +218,7 @@ class Factory implements HybridResponse
             $request->setLaravelSession($session);
         }
 
-        app()->instance('request', $request);
+        App::instance('request', $request);
 
         $response = (new SubstituteBindings($this->router))->handle(
             request: $request,
@@ -242,7 +226,7 @@ class Factory implements HybridResponse
         );
 
         if ($response instanceof RedirectResponse) {
-            return $this->getBaseView($response->getTargetUrl(), $request);
+            return $this->resolveBaseView($response->getTargetUrl(), $request);
         }
 
         if (! ($response instanceof self)) {
@@ -255,7 +239,7 @@ class Factory implements HybridResponse
     /**
      * Resolves the dialog from the request.
      */
-    protected function resolveDialog(Request $request): ?Dialog
+    private function resolveDialog(Request $request): ?Dialog
     {
         if (! $this->dialogBaseUrl) {
             return null;
@@ -266,8 +250,9 @@ class Factory implements HybridResponse
             request: $request,
             view: new View(
                 component: $this->view->component,
-                properties: Arr::except($this->view->properties, array_keys($this->hybridly->shared())),
+                properties: Arr::except($this->view->properties, array_keys($this->hybridly->sharedProperties)),
                 deferred: [],
+                mergeable: [],
             ),
         );
     }
@@ -275,21 +260,22 @@ class Factory implements HybridResponse
     /**
      * Resolves the view from the request.
      */
-    protected function resolveView(View $view, Request $request): View
+    private function resolveView(View $view, Request $request): View
     {
-        [$properties, $deferred] = $this->resolveProperties($view, $request);
+        [$properties, $deferred, $mergeable] = $this->resolveProperties($view, $request);
 
         return new View(
             component: $view->component,
             properties: $properties,
             deferred: $deferred,
+            mergeable: $mergeable,
         );
     }
 
     /**
      * Resolves the properties on the given view or dialog.
      */
-    protected function resolveProperties(Dialog|View $view, Request $request, bool $includeSharedProperties = true): array
+    private function resolveProperties(Dialog|View $view, Request $request, bool $includeSharedProperties = true): array
     {
         // We don't use dependency injection, because the request object
         // could be different than the one given to `toResponse`.
@@ -297,22 +283,66 @@ class Factory implements HybridResponse
 
         return $resolver->resolve(
             component: $view->component,
-            properties: $includeSharedProperties ? [...$this->hybridly->shared(), ...$view->properties] : $view->properties,
-            persisted: $this->hybridly->persisted(),
+            properties: $includeSharedProperties ? [...$this->hybridly->sharedProperties, ...$view->properties] : $view->properties,
+            persistedByPath: $this->hybridly->persistedProperties,
         );
     }
 
     /**
      * Resolves the URL that will be shown in the browser.
      */
-    protected function resolveUrl(Request $request): string
+    private function resolveUrl(Request $request): string
     {
         if ($resolver = $this->hybridly->getUrlResolver()) {
-            return app()->call($resolver, [
+            return App::call($resolver, [
                 'request' => $request,
             ]);
         }
 
         return $request->fullUrl();
+    }
+
+    /**
+     * Resolves validation errors grouped by bag name.
+     */
+    private function resolveValidation(Request $request): array
+    {
+        if (! $request->hasSession()) {
+            return [];
+        }
+
+        if (! ($errors = $request->session()->get('errors'))) {
+            return [];
+        }
+
+        if (! ($errors instanceof ViewErrorBag)) {
+            return [];
+        }
+
+        $resolved = collect($errors->getBags())
+            ->map(fn (MessageBag $bag) => array_map(fn (array $messages) => $messages[0], $bag->messages()))
+            ->toArray();
+
+        if (! ($error_bag = $request->header(Header::ERROR_BAG))) {
+            return $resolved;
+        }
+
+        if (! array_key_exists('default', $resolved)) {
+            return $resolved;
+        }
+
+        if (array_key_exists($error_bag, $resolved)) {
+            return $resolved;
+        }
+
+        $resolved[$error_bag] = $resolved['default'];
+        unset($resolved['default']);
+
+        return $resolved;
+    }
+
+    private function transformProperties(iterable $properties): array
+    {
+        return SupportArr::resolveArrayableProperties($properties);
     }
 }

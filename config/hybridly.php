@@ -1,5 +1,7 @@
 <?php
 
+use Hybridly\Architecture\ModulesComponentLoader;
+use Hybridly\Architecture\ResourcesComponentLoader;
 use Hybridly\Support\Configuration\Architecture;
 use Hybridly\Support\TypeScriptTransformer\GlobalPropertiesNamespaceTransformer;
 
@@ -17,6 +19,7 @@ return [
      * | `exclude` array. Filters in the `exclude` array support wildcards (*).
      */
     'router' => [
+        'generate_absolute_urls' => false,
         'allowed_vendors' => [
             'laravel/fortify',
         ],
@@ -35,14 +38,13 @@ return [
      * | See: https://hybridly.dev/guide/architecture.html
      */
     'architecture' => [
-        'load_default_module' => true,
-        'eager_load_views' => true,
+        // 'root_directory' => 'src',
+        // 'component_loader' => ModulesComponentLoader::class,
         'root_directory' => 'resources',
-        'application_main' => Architecture::APPLICATION_MAIN,
+        'component_loader' => ResourcesComponentLoader::class,
+        'eager_load_views' => true,
+        'entrypoint' => Architecture::ENTRYPOINT,
         'root_view' => Architecture::ROOT_VIEW,
-        'extensions' => ['vue', 'tsx'],
-        'excluded_views_directories' => [],
-        'generate_absolute_urls' => true,
     ],
     /*
      * |--------------------------------------------------------------------------

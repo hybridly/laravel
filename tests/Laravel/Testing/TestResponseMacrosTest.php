@@ -4,6 +4,7 @@ use Hybridly\Testing\Assertable;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Testing\TestResponse;
 
+use function Hybridly\view;
 use function Pest\Laravel\get;
 
 test('the `assertHybrid` method runs its callback', function () {
@@ -18,8 +19,8 @@ test('the `assertHybrid` method runs its callback', function () {
 });
 
 test('the `assertHybridDialog` method asserts dialog view component & base url & properties', function () {
-    Route::get('/test/view', fn () => hybridly('test.view'))->name('test.view');
-    Route::get('/test/dialog', fn () => hybridly('test.dialog', ['foo' => 'bar'])->base('test.view'))->name('test.dialog');
+    Route::get('/test/view', fn () => view('test.view'))->name('test.view');
+    Route::get('/test/dialog', fn () => view('test.dialog', ['foo' => 'bar'])->configureDialog(route('test.view')))->name('test.dialog');
 
     get('/test/dialog')
         ->assertHybridView('test.view')
@@ -121,7 +122,7 @@ test('the `assertHybridView` method asserts the hybrid response view is the expe
 });
 
 test('the `assertHybridVersion` method asserts the hybrid response version is the expected value', function () {
-    hybridly()->setVersion('owo');
+    hybridly()->resolveVersionUsing(fn () => 'owo');
     make_hybrid_mock_request()->assertHybridVersion('owo');
 });
 
@@ -144,6 +145,8 @@ test('the `getHybridPayload` method returns the payload of the hybrid response',
         expect($view['dialog'])->toBeNull();
         expect($view['url'])->toBe(config('app.url') . '/hybrid-mock-url');
         expect($view['version'])->toBeNull();
+        expect($view['validation'])->toBeArray();
+        expect($view['validation'])->toBeEmpty();
     });
 });
 
