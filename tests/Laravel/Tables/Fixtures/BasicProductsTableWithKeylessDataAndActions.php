@@ -2,8 +2,6 @@
 
 namespace Hybridly\Tests\Laravel\Tables\Fixtures;
 
-use Hybridly\Refining\Filters\TextFilter;
-use Hybridly\Refining\Sorts\Sort;
 use Hybridly\Tables\Actions\BulkAction;
 use Hybridly\Tables\Actions\InlineAction;
 use Hybridly\Tables\Columns\TextColumn;
@@ -11,18 +9,10 @@ use Hybridly\Tables\Table;
 use Hybridly\Tests\Fixtures\Database\Product;
 use Illuminate\Support\Collection;
 
-class BasicScopedProductsTable extends Table
+class BasicProductsTableWithKeylessDataAndActions extends Table
 {
     protected string $model = Product::class;
-    protected \Closure|string|null $scope = 'custom-scope';
-
-    public function defineRefiners(): array
-    {
-        return [
-            Sort::make('name'),
-            TextFilter::make('name'),
-        ];
-    }
+    protected string $data = ProductNameData::class;
 
     public function defineActions(): array
     {
